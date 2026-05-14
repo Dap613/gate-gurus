@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gate Gurus — Dispatch Tool</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Open Sans', sans-serif;
+      background: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+    }
+
+    #root { width: 100%; max-width: 660px; }
+
+    input, textarea {
+      font-family: 'Open Sans', sans-serif;
+      font-size: 14px;
+      padding: 10px 14px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 7px;
+      width: 100%;
+      outline: none;
+      background: #fff;
+      color: #111827;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, textarea:focus {
+      border-color: #e82424;
+      box-shadow: 0 0 0 3px rgba(232,36,36,.08);
+    }
+    textarea { resize: vertical; line-height: 1.6; }
+
+    .btn-red {
+      cursor: pointer; padding: 11px 22px; border-radius: 7px; border: none;
+      background: #e82424; color: #fff; font-family: 'Montserrat', sans-serif;
+      font-size: 14px; font-weight: 700; display: inline-flex; align-items: center;
+      gap: 6px; transition: background .15s; letter-spacing: .01em;
+    }
+    .btn-red:hover { background: #cc1f1f; }
+    .btn-red:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-ghost {
+      cursor: pointer; padding: 9px 16px; border-radius: 7px;
+      border: 1.5px solid #d1d5db; background: #fff; color: #4b5563;
+      font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px; transition: background .15s;
+    }
+    .btn-ghost:hover { background: #f9fafb; }
+
+    .card {
+      background: #fff; border: 1.5px solid #e5e7eb;
+      border-radius: 10px; padding: 18px 20px;
+    }
+
+    .opt-card {
+      cursor: pointer; padding: 14px; border-radius: 10px;
+      border: 1.5px solid #e5e7eb; background: #fff; transition: all .12s;
+    }
+    .opt-card:hover { border-color: #9ca3af; }
+    .opt-card.sel { border-color: #e82424 !important; background: #fff5f5 !important; }
+
+    .tag {
+      font-size: 11px; padding: 3px 9px; border-radius: 20px;
+      display: inline-flex; align-items: center; gap: 3px;
+      font-weight: 700; font-family: 'Montserrat', sans-serif;
+    }
+
+    .upload-zone {
+      border: 1.5px dashed #d1d5db; padding: 16px; border-radius: 9px;
+      text-align: center; cursor: pointer; background: #f9fafb; transition: border-color .15s;
+    }
+    .upload-zone:hover { border-color: #e82424; }
+
+    .drop-item:hover { background: #f9fafb !important; }
+    .lbl {
+      font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 700;
+      color: #6b7280; text-transform: uppercase; letter-spacing: .06em;
+      display: block; margin-bottom: 5px;
+    }
+
+    @keyframes spin  { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+    .spin  { animation: spin  1s linear infinite; display: inline-block; }
+    .pulse { animation: pulse 1.5s ease-in-out infinite; }
+  </style>
+</head>
+
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+// ─────────────────────────────────────────────────────────────────────
+// CONFIGURATION
+// Restrict this key to the Distance Matrix API + your GitHub Pages domain
+// in Google Cloud Console → APIs & Services → Credentials
+// ─────────────────────────────────────────────────────────────────────
+const GOOGLE_API_KEY = "AIzaSyCBlu9Cqi8VKdtM7oTQLav713VDHidfhuM";
+
+// ─────────────────────────────────────────────────────────────────────
+// TECHNICIANS
+// To add/edit: update id, home suburb, origin address, maxMin, gates
+// ─────────────────────────────────────────────────────────────────────
+const TECHS = [
+  { id:"SH", home:"Caulfield",   origin:"Caulfield VIC 3162 Australia",   maxMin:35, gates:["sliding","swing","boom"], flex:false, color:"#2563eb" },
+  { id:"EY", home:"Point Cook",  origin:"Point Cook VIC 3030 Australia",  maxMin:40, gates:["sliding","swing","boom"], flex:true,  color:"#16a34a" },
+  { id:"EM", home:"Mentone",     origin:"Mentone VIC 3194 Australia",     maxMin:50, gates:["sliding","swing","boom"], flex:true,  color:"#7c3aed" },
+  { id:"YH", home:"Caulfield",   origin:"Caulfield VIC 3162 Australia",   maxMin:35, gates:["sliding","swing"],       flex:true,  color:"#b45309" },
+];
+
+// ─────────────────────────────────────────────────────────────────────
+// MELBOURNE SUBURBS (160 suburbs with coordinates)
+// ─────────────────────────────────────────────────────────────────────
+const SUBURBS = [
+  {n:"Abbotsford",p:"3067",lat:-37.804,lng:144.998},{n:"Albert Park",p:"3206",lat:-37.844,lng:144.959},{n:"Alphington",p:"3078",lat:-37.778,lng:145.021},{n:"Altona",p:"3018",lat:-37.870,lng:144.828},{n:"Altona Meadows",p:"3028",lat:-37.887,lng:144.812},{n:"Altona North",p:"3025",lat:-37.844,lng:144.856},{n:"Armadale",p:"3143",lat:-37.858,lng:145.016},{n:"Ascot Vale",p:"3032",lat:-37.776,lng:144.918},{n:"Ashburton",p:"3147",lat:-37.872,lng:145.088},{n:"Aspendale",p:"3195",lat:-38.007,lng:145.102},{n:"Airport West",p:"3042",lat:-37.721,lng:144.887},{n:"Balwyn",p:"3103",lat:-37.809,lng:145.086},{n:"Bayswater",p:"3153",lat:-37.846,lng:145.263},{n:"Beaumaris",p:"3193",lat:-37.987,lng:145.038},{n:"Bentleigh",p:"3204",lat:-37.920,lng:145.034},{n:"Bentleigh East",p:"3165",lat:-37.921,lng:145.063},{n:"Berwick",p:"3806",lat:-38.033,lng:145.347},{n:"Black Rock",p:"3193",lat:-37.968,lng:145.016},{n:"Blackburn",p:"3130",lat:-37.814,lng:145.153},{n:"Bonbeach",p:"3196",lat:-38.058,lng:145.130},{n:"Boronia",p:"3155",lat:-37.865,lng:145.284},{n:"Box Hill",p:"3128",lat:-37.820,lng:145.122},{n:"Brighton",p:"3186",lat:-37.905,lng:145.004},{n:"Brighton East",p:"3187",lat:-37.913,lng:145.019},{n:"Broadmeadows",p:"3047",lat:-37.682,lng:144.919},{n:"Brunswick",p:"3056",lat:-37.771,lng:144.960},{n:"Brunswick East",p:"3057",lat:-37.774,lng:144.977},{n:"Brunswick West",p:"3055",lat:-37.774,lng:144.946},{n:"Bundoora",p:"3083",lat:-37.699,lng:145.053},{n:"Burwood",p:"3125",lat:-37.845,lng:145.092},{n:"Camberwell",p:"3124",lat:-37.838,lng:145.060},{n:"Canterbury",p:"3126",lat:-37.824,lng:145.071},{n:"Carlton",p:"3053",lat:-37.799,lng:144.967},{n:"Carnegie",p:"3163",lat:-37.893,lng:145.059},{n:"Caroline Springs",p:"3023",lat:-37.737,lng:144.738},{n:"Carrum",p:"3197",lat:-38.073,lng:145.120},{n:"Carrum Downs",p:"3201",lat:-38.106,lng:145.170},{n:"Caulfield",p:"3162",lat:-37.878,lng:145.044},{n:"Caulfield North",p:"3161",lat:-37.867,lng:145.031},{n:"Caulfield South",p:"3162",lat:-37.888,lng:145.049},{n:"Chelsea",p:"3196",lat:-38.047,lng:145.119},{n:"Chelsea Heights",p:"3196",lat:-38.039,lng:145.138},{n:"Cheltenham",p:"3192",lat:-37.956,lng:145.048},{n:"Clarinda",p:"3169",lat:-37.955,lng:145.089},{n:"Clayton",p:"3168",lat:-37.920,lng:145.124},{n:"Coburg",p:"3058",lat:-37.742,lng:144.966},{n:"Collingwood",p:"3066",lat:-37.803,lng:144.989},{n:"Craigieburn",p:"3064",lat:-37.599,lng:144.948},{n:"Cranbourne",p:"3977",lat:-38.112,lng:145.284},{n:"Croydon",p:"3136",lat:-37.796,lng:145.282},{n:"Dandenong",p:"3175",lat:-37.988,lng:145.211},{n:"Deer Park",p:"3023",lat:-37.769,lng:144.773},{n:"Diamond Creek",p:"3089",lat:-37.674,lng:145.161},{n:"Docklands",p:"3008",lat:-37.815,lng:144.947},{n:"Doncaster",p:"3108",lat:-37.786,lng:145.126},{n:"Doncaster East",p:"3109",lat:-37.789,lng:145.148},{n:"East Melbourne",p:"3002",lat:-37.811,lng:144.985},{n:"Edithvale",p:"3196",lat:-38.026,lng:145.112},{n:"Elsternwick",p:"3185",lat:-37.887,lng:144.996},{n:"Elwood",p:"3184",lat:-37.885,lng:144.988},{n:"Epping",p:"3076",lat:-37.646,lng:145.014},{n:"Essendon",p:"3040",lat:-37.750,lng:144.919},{n:"Fairfield",p:"3078",lat:-37.778,lng:145.014},{n:"Fawkner",p:"3060",lat:-37.710,lng:144.970},{n:"Ferntree Gully",p:"3156",lat:-37.895,lng:145.296},{n:"Fitzroy",p:"3065",lat:-37.799,lng:144.980},{n:"Flemington",p:"3031",lat:-37.789,lng:144.925},{n:"Footscray",p:"3011",lat:-37.800,lng:144.900},{n:"Frankston",p:"3199",lat:-38.145,lng:145.129},{n:"Frankston North",p:"3200",lat:-38.124,lng:145.129},{n:"Glen Huntly",p:"3163",lat:-37.897,lng:145.045},{n:"Glen Iris",p:"3146",lat:-37.864,lng:145.066},{n:"Glen Waverley",p:"3150",lat:-37.878,lng:145.163},{n:"Glenroy",p:"3046",lat:-37.702,lng:144.933},{n:"Hampton",p:"3188",lat:-37.933,lng:145.006},{n:"Hawthorn",p:"3122",lat:-37.823,lng:145.033},{n:"Hawthorn East",p:"3123",lat:-37.831,lng:145.048},{n:"Heatherton",p:"3202",lat:-37.966,lng:145.095},{n:"Heidelberg",p:"3084",lat:-37.758,lng:145.062},{n:"Hoppers Crossing",p:"3029",lat:-37.881,lng:144.707},{n:"Ivanhoe",p:"3079",lat:-37.765,lng:145.045},{n:"Keilor",p:"3036",lat:-37.725,lng:144.838},{n:"Keysborough",p:"3173",lat:-37.993,lng:145.173},{n:"Kew",p:"3101",lat:-37.808,lng:145.032},{n:"Knox",p:"3152",lat:-37.900,lng:145.240},{n:"Lalor",p:"3075",lat:-37.676,lng:145.022},{n:"Langwarrin",p:"3910",lat:-38.156,lng:145.188},{n:"Laverton",p:"3028",lat:-37.864,lng:144.777},{n:"Lilydale",p:"3140",lat:-37.760,lng:145.350},{n:"Malvern",p:"3144",lat:-37.857,lng:145.030},{n:"Malvern East",p:"3145",lat:-37.870,lng:145.062},{n:"Manor Lakes",p:"3024",lat:-37.921,lng:144.642},{n:"Melbourne",p:"3000",lat:-37.814,lng:144.963},{n:"Melton",p:"3337",lat:-37.680,lng:144.580},{n:"Mentone",p:"3194",lat:-37.981,lng:145.066},{n:"Middle Park",p:"3206",lat:-37.850,lng:144.955},{n:"Mill Park",p:"3082",lat:-37.664,lng:145.053},{n:"Mitcham",p:"3132",lat:-37.818,lng:145.191},{n:"Moonee Ponds",p:"3039",lat:-37.765,lng:144.922},{n:"Moorabbin",p:"3189",lat:-37.939,lng:145.056},{n:"Mooroolbark",p:"3138",lat:-37.779,lng:145.305},{n:"Mordialloc",p:"3195",lat:-37.999,lng:145.089},{n:"Mount Waverley",p:"3149",lat:-37.873,lng:145.130},{n:"Murrumbeena",p:"3163",lat:-37.898,lng:145.074},{n:"Narre Warren",p:"3805",lat:-38.025,lng:145.278},{n:"Newport",p:"3015",lat:-37.847,lng:144.897},{n:"Niddrie",p:"3042",lat:-37.742,lng:144.894},{n:"Noble Park",p:"3174",lat:-37.969,lng:145.171},{n:"North Melbourne",p:"3051",lat:-37.798,lng:144.946},{n:"Northcote",p:"3070",lat:-37.770,lng:145.010},{n:"Notting Hill",p:"3168",lat:-37.901,lng:145.132},{n:"Nunawading",p:"3131",lat:-37.823,lng:145.174},{n:"Oakleigh",p:"3166",lat:-37.900,lng:145.094},{n:"Oakleigh South",p:"3167",lat:-37.920,lng:145.094},{n:"Ormond",p:"3204",lat:-37.907,lng:145.032},{n:"Pakenham",p:"3810",lat:-38.072,lng:145.489},{n:"Parkdale",p:"3195",lat:-37.993,lng:145.076},{n:"Pascoe Vale",p:"3044",lat:-37.726,lng:144.944},{n:"Point Cook",p:"3030",lat:-37.907,lng:144.753},{n:"Port Melbourne",p:"3207",lat:-37.836,lng:144.939},{n:"Prahran",p:"3181",lat:-37.849,lng:144.992},{n:"Preston",p:"3072",lat:-37.745,lng:145.005},{n:"Reservoir",p:"3073",lat:-37.716,lng:145.004},{n:"Richmond",p:"3121",lat:-37.824,lng:144.999},{n:"Ringwood",p:"3134",lat:-37.814,lng:145.228},{n:"Rosanna",p:"3084",lat:-37.740,lng:145.068},{n:"Rowville",p:"3178",lat:-37.938,lng:145.226},{n:"Sandringham",p:"3191",lat:-37.951,lng:145.006},{n:"Seaford",p:"3198",lat:-38.095,lng:145.142},{n:"Seddon",p:"3011",lat:-37.810,lng:144.895},{n:"South Melbourne",p:"3205",lat:-37.830,lng:144.960},{n:"South Morang",p:"3752",lat:-37.635,lng:145.077},{n:"South Yarra",p:"3141",lat:-37.838,lng:144.994},{n:"Southbank",p:"3006",lat:-37.821,lng:144.968},{n:"Springvale",p:"3171",lat:-37.948,lng:145.151},{n:"St Albans",p:"3021",lat:-37.749,lng:144.804},{n:"St Kilda",p:"3182",lat:-37.868,lng:144.983},{n:"St Kilda East",p:"3183",lat:-37.868,lng:144.998},{n:"Strathmore",p:"3041",lat:-37.728,lng:144.924},{n:"Sunbury",p:"3429",lat:-37.578,lng:144.725},{n:"Sunshine",p:"3020",lat:-37.789,lng:144.832},{n:"Sunshine West",p:"3020",lat:-37.804,lng:144.802},{n:"Tarneit",p:"3029",lat:-37.847,lng:144.687},{n:"Templestowe",p:"3106",lat:-37.763,lng:145.145},{n:"Thomastown",p:"3074",lat:-37.696,lng:145.021},{n:"Thornbury",p:"3071",lat:-37.758,lng:145.005},{n:"Toorak",p:"3142",lat:-37.843,lng:145.011},{n:"Truganina",p:"3029",lat:-37.854,lng:144.723},{n:"Tullamarine",p:"3043",lat:-37.699,lng:144.883},{n:"Vermont",p:"3133",lat:-37.831,lng:145.197},{n:"Wantirna",p:"3152",lat:-37.866,lng:145.236},{n:"Werribee",p:"3030",lat:-37.902,lng:144.662},{n:"West Footscray",p:"3012",lat:-37.809,lng:144.885},{n:"West Melbourne",p:"3003",lat:-37.804,lng:144.940},{n:"Williamstown",p:"3016",lat:-37.863,lng:144.900},{n:"Windsor",p:"3181",lat:-37.856,lng:144.988},{n:"Wyndham Vale",p:"3024",lat:-37.896,lng:144.625},{n:"Yarraville",p:"3013",lat:-37.819,lng:144.893},
+];
+
+// ─────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────────────
+const HOME_COORDS = {
+  SH:{lat:-37.8776,lng:145.0436}, EY:{lat:-37.9072,lng:144.7532},
+  EM:{lat:-37.9805,lng:145.0658}, YH:{lat:-37.8776,lng:145.0436},
+};
+
+function haversine(lat1,lng1,lat2,lng2){
+  const R=6371,r=x=>x*Math.PI/180;
+  const x=Math.sin(r(lat2-lat1)/2)**2+Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(r(lng2-lng1)/2)**2;
+  return R*2*Math.asin(Math.sqrt(x));
+}
+
+function fallbackDrive(tech, suburb){
+  const h=HOME_COORDS[tech.id];
+  const km=haversine(h.lat,h.lng,suburb.lat,suburb.lng);
+  const cross=(h.lng>144.96&&suburb.lng<144.93)||(h.lng<144.93&&suburb.lng>144.96);
+  return { mins:Math.round(km*(cross?1.62:1.35)/30*60), km:Math.round(km*10)/10, source:'estimate' };
+}
+
+// Single Google API call for all technicians (deduplicates SH+YH)
+async function fetchGoogleDriveTimes(suburb){
+  const uniqueOrigins = [
+    "Caulfield VIC 3162 Australia",   // row 0 → SH + YH
+    "Point Cook VIC 3030 Australia",  // row 1 → EY
+    "Mentone VIC 3194 Australia",     // row 2 → EM
+  ];
+  const destination = `${suburb.n} VIC ${suburb.p} Australia`;
+  const params = new URLSearchParams({
+    origins:        uniqueOrigins.join('|'),
+    destinations:   destination,
+    mode:           'driving',
+    avoid:          'tolls',        // routes around CityLink
+    departure_time: 'now',          // live traffic
+    key:            GOOGLE_API_KEY,
+  });
+  const res = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.status !== 'OK') throw new Error(data.error_message || data.status);
+
+  const rowMap = { SH:0, EY:1, EM:2, YH:0 };
+  const out = {};
+  TECHS.forEach(t => {
+    const el = data.rows[rowMap[t.id]]?.elements[0];
+    if (el?.status === 'OK') {
+      const secs = el.duration_in_traffic?.value ?? el.duration.value;
+      out[t.id] = {
+        mins: Math.round(secs / 60),
+        km:   Math.round(el.distance.value / 100) / 10,
+        source: 'google',
+        withTraffic: !!el.duration_in_traffic,
+      };
+    }
+  });
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PHOTO UPLOAD COMPONENT
+// ─────────────────────────────────────────────────────────────────────
+function PhotoUpload({ photos, onChange, label }) {
+  const ref = useRef();
+  const add = e => { onChange([...photos, ...Array.from(e.target.files).map(f => f.name)]); e.target.value = ""; };
+  return (
+    <div>
+      <div className="upload-zone" onClick={() => ref.current?.click()}>
+        <i className="ti ti-cloud-upload" style={{fontSize:22,color:"#e82424",display:"block",marginBottom:5}}/>
+        <div style={{fontSize:13,fontWeight:600,color:"#374151",fontFamily:"'Montserrat',sans-serif"}}>{label}</div>
+        <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Click to browse · JPG, PNG</div>
+        <input ref={ref} type="file" multiple accept="image/*" onChange={add} style={{display:"none"}}/>
+      </div>
+      {photos.length > 0 && (
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+          {photos.map((n,i) => (
+            <div key={i} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 10px",background:"#fff5f5",border:"1px solid #fca5a5",borderRadius:20,fontSize:12,color:"#374151"}}>
+              <i className="ti ti-photo" style={{fontSize:11,color:"#e82424"}}/>
+              <span style={{maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span>
+              <button onClick={() => onChange(photos.filter((_,j) => j !== i))}
+                style={{background:"none",border:"none",cursor:"pointer",padding:0,lineHeight:1,color:"#9ca3af",fontSize:12}}>
+                <i className="ti ti-x"/>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// MAIN APP
+// ─────────────────────────────────────────────────────────────────────
+const STEP_LABELS = ["Location","Service","Details","Damage","Gate type"];
+const INIT = { suburb:null, svc:null, problem:"", damaged:null, gateType:null, photos:[], damagePhotos:[] };
+
+function App() {
+  const [step, setStep]         = useState(1);
+  const [form, setForm]         = useState(INIT);
+  const [subQ, setSubQ]         = useState("");
+  const [showDrop, setShowDrop] = useState(false);
+  const [driveData, setDriveData] = useState(null); // null | 'loading' | {techId:…} | 'error'
+  const dropRef = useRef();
+
+  const upd   = (k,v) => setForm(p => ({...p,[k]:v}));
+  const next  = ()    => setStep(s => s+1);
+  const back  = ()    => setStep(s => s-1);
+  const reset = ()    => { setStep(1); setForm(INIT); setSubQ(""); setDriveData(null); };
+
+  const isReferral = step > 2 && (form.svc === "new" || form.svc === "other");
+
+  // Fire Google API the moment a suburb is selected
+  useEffect(() => {
+    if (!form.suburb) { setDriveData(null); return; }
+    setDriveData('loading');
+    fetchGoogleDriveTimes(form.suburb)
+      .then(d => setDriveData(d))
+      .catch(err => { console.warn('Google API unavailable, using estimates:', err); setDriveData('error'); });
+  }, [form.suburb]);
+
+  // Close suburb dropdown on outside click
+  useEffect(() => {
+    const fn = e => { if (dropRef.current && !dropRef.current.contains(e.target)) setShowDrop(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (subQ.length < 2) return [];
+    const q = subQ.toLowerCase();
+    return SUBURBS.filter(s => s.n.toLowerCase().includes(q) || s.p.includes(q)).slice(0,8);
+  }, [subQ]);
+
+  const outsideArea = useMemo(() => {
+    if (!form.suburb) return false;
+    const googleReady = driveData && driveData !== 'loading' && driveData !== 'error';
+    if (googleReady) return TECHS.every(t => driveData[t.id] && driveData[t.id].mins > t.maxMin * 1.25);
+    return TECHS.every(t => fallbackDrive(t, form.suburb).mins > t.maxMin * 1.25);
+  }, [form.suburb, driveData]);
+
+  const results = useMemo(() => {
+    if (!form.suburb || !form.gateType) return [];
+    const googleReady = driveData && driveData !== 'loading' && driveData !== 'error';
+    return TECHS.map(t => {
+      let mins, km, source, withTraffic = false;
+      if (googleReady && driveData[t.id]) {
+        ({ mins, km, withTraffic } = driveData[t.id]);
+        source = 'google';
+      } else {
+        const fb = fallbackDrive(t, form.suburb);
+        mins = fb.mins; km = fb.km; source = 'estimate';
+      }
+      const canGate = t.gates.includes(form.gateType);
+      let status = "no", reasons = [];
+      if (!canGate)              reasons.push(`Cannot handle ${form.gateType} gates`);
+      else if (mins <= t.maxMin) status = "yes";
+      else if (mins <= t.maxMin * 1.15) { status = "maybe"; reasons.push(`${mins} min vs ${t.maxMin} min limit`); }
+      else                       reasons.push(`${mins} min exceeds ${t.maxMin} min limit`);
+      return { ...t, mins, km, source, withTraffic, canGate, status, reasons };
+    }).sort((a,b) => ({yes:0,maybe:1,no:2}[a.status] - {yes:0,maybe:1,no:2}[b.status] || a.mins - b.mins));
+  }, [form.suburb, form.gateType, driveData]);
+
+  // ── Shared style helpers ───────────────────────────────────────────
+  const FM = { fontFamily:"'Montserrat',sans-serif" };
+  const F  = { fontFamily:"'Open Sans',sans-serif" };
+  const UL = { ...FM, fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:".06em", display:"block", marginBottom:5 };
+  const btnRed   = { cursor:"pointer", padding:"11px 22px", borderRadius:7, border:"none", background:"#e82424", color:"#fff", ...FM, fontSize:14, fontWeight:700, display:"inline-flex", alignItems:"center", gap:6, transition:"background .15s" };
+  const btnGhost = { cursor:"pointer", padding:"9px 16px", borderRadius:7, border:"1.5px solid #d1d5db", background:"#fff", color:"#4b5563", ...FM, fontSize:13, fontWeight:600, display:"inline-flex", alignItems:"center", gap:5 };
+  const card     = { background:"#fff", border:"1.5px solid #e5e7eb", borderRadius:10, padding:"18px 20px" };
+  const optCard  = sel => ({ cursor:"pointer", padding:"14px", borderRadius:10, border:`1.5px solid ${sel?"#e82424":"#e5e7eb"}`, background:sel?"#fff5f5":"#fff", transition:"all .12s" });
+  const pill     = (bg,tc) => ({ ...FM, fontSize:11, padding:"3px 9px", borderRadius:20, background:bg, color:tc, fontWeight:700, display:"inline-flex", alignItems:"center", gap:3 });
+
+  const BackBtn = <button style={btnGhost} onClick={back}><i className="ti ti-arrow-left"/>Back</button>;
+
+  const DriveTimeBadge = ({ source, withTraffic }) => source === 'google'
+    ? <span style={{...FM,fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#f0fdf4",color:"#15803d",display:"inline-flex",alignItems:"center",gap:3}}>
+        <i className="ti ti-map-2" style={{fontSize:10}}/>{withTraffic ? "Live traffic" : "Google Maps"}
+      </span>
+    : <span style={{...FM,fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"#f3f4f6",color:"#6b7280",display:"inline-flex",alignItems:"center",gap:3}}>
+        <i className="ti ti-calculator" style={{fontSize:10}}/>Estimated
+      </span>;
+
+  // ── Progress bar ───────────────────────────────────────────────────
+  const Progress = () => (
+    <div style={{display:"flex",alignItems:"center",marginBottom:24}}>
+      {STEP_LABELS.map((lbl,i) => {
+        const n=i+1, done=step>n, active=step===n;
+        return (
+          <React.Fragment key={n}>
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:done?"#16a34a":active?"#e82424":"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:(done||active)?"#fff":"#9ca3af",transition:"all .2s",flexShrink:0,...FM}}>
+                {done ? <i className="ti ti-check" style={{fontSize:12}}/> : n}
+              </div>
+              <span style={{fontSize:9,fontWeight:700,...FM,color:done?"#16a34a":active?"#e82424":"#9ca3af",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:".04em"}}>{lbl}</span>
+            </div>
+            {i<4 && <div style={{flex:1,height:2,background:done?"#16a34a":"#e5e7eb",margin:"0 3px",marginBottom:16,transition:"background .2s"}}/>}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+
+  // ── Step 1: Suburb ─────────────────────────────────────────────────
+  const renderSuburb = () => (
+    <div>
+      <h3 style={{...FM,margin:"0 0 4px",fontSize:19,fontWeight:800,color:"#111827"}}>Where is the job?</h3>
+      <p style={{...F,margin:"0 0 18px",fontSize:13,color:"#6b7280"}}>Enter suburb or postcode — drive times are confirmed via Google Maps</p>
+      <label style={UL}>Suburb or postcode</label>
+      <div ref={dropRef} style={{position:"relative",marginBottom:12}}>
+        <div style={{position:"relative"}}>
+          <i className="ti ti-map-pin" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:15,color:"#e82424",pointerEvents:"none"}}/>
+          <input style={{...F,fontSize:14,paddingLeft:34}} type="text"
+            placeholder="e.g. Caulfield, Brighton, 3162…"
+            value={subQ}
+            onChange={e => { setSubQ(e.target.value); setShowDrop(true); if (!e.target.value) upd("suburb",null); }}
+            onFocus={() => subQ.length >= 2 && setShowDrop(true)}
+          />
+        </div>
+        {showDrop && filtered.length > 0 && (
+          <div style={{position:"absolute",top:"calc(100% + 3px)",left:0,right:0,zIndex:60,background:"#fff",border:"1.5px solid #e5e7eb",borderRadius:8,overflow:"hidden",boxShadow:"0 8px 20px rgba(0,0,0,.08)"}}>
+            {filtered.map(s => (
+              <div key={s.n+s.p} className="drop-item"
+                onClick={() => { upd("suburb",s); setSubQ(`${s.n}  ${s.p}`); setShowDrop(false); }}
+                style={{padding:"9px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #f3f4f6",fontSize:13,...F}}>
+                <div style={{display:"flex",alignItems:"center",gap:7}}>
+                  <i className="ti ti-map-pin" style={{fontSize:12,color:"#9ca3af"}}/>
+                  <span style={{fontWeight:700,color:"#111827",...FM}}>{s.n}</span>
+                </div>
+                <span style={{fontSize:11,color:"#9ca3af",background:"#f3f4f6",padding:"2px 8px",borderRadius:20,fontWeight:700,...FM}}>{s.p}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {form.suburb && driveData === 'loading' && (
+        <div style={{padding:"10px 14px",borderRadius:8,marginBottom:8,background:"#eff6ff",border:"1.5px solid #bfdbfe",display:"flex",gap:10,alignItems:"center"}}>
+          <i className="ti ti-map-2 pulse" style={{fontSize:16,color:"#1d4ed8",flexShrink:0}}/>
+          <p style={{...F,margin:0,fontSize:13,color:"#1d4ed8",fontWeight:600}}>Checking drive times via Google Maps…</p>
+        </div>
+      )}
+      {form.suburb && driveData && driveData !== 'loading' && (
+        <div style={{padding:"10px 14px",borderRadius:8,marginBottom:8,background:outsideArea?"#fef2f2":"#f0fdf4",border:`1.5px solid ${outsideArea?"#fca5a5":"#86efac"}`,display:"flex",gap:10,alignItems:"flex-start"}}>
+          <i className={`ti ${outsideArea?"ti-alert-triangle":"ti-circle-check"}`} style={{fontSize:17,color:outsideArea?"#dc2626":"#16a34a",flexShrink:0,marginTop:1}}/>
+          <div>
+            <p style={{...F,margin:0,fontSize:13,color:outsideArea?"#dc2626":"#16a34a",fontWeight:600}}>
+              {outsideArea ? `${form.suburb.n} is outside the service area.` : `${form.suburb.n} is within the service area.`}
+            </p>
+            <p style={{...F,margin:"2px 0 0",fontSize:11,color:outsideArea?"#dc2626":"#16a34a",opacity:.75}}>
+              {driveData === 'error' ? "Using estimated drive times (Google Maps unavailable)" : "Drive times confirmed via Google Maps · no tolls / CityLink"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:22}}>
+        <button style={{...btnRed,opacity:form.suburb?1:.4}} className="btn-red" onClick={() => form.suburb && next()} disabled={!form.suburb}>
+          Continue <i className="ti ti-arrow-right"/>
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Step 2: Service type ───────────────────────────────────────────
+  const SVCS = [
+    {id:"new",      label:"New gate",              icon:"ti-door-enter",  desc:"Supply & install a new gate",      ref:true},
+    {id:"automate", label:"Automate existing",      icon:"ti-settings",    desc:"Add automation to a manual gate",  ref:false},
+    {id:"repair",   label:"Repair automated gate",  icon:"ti-tool",        desc:"Fix an existing automated gate",   ref:false},
+    {id:"other",    label:"Other enquiry",          icon:"ti-help-circle", desc:"Something outside the above",      ref:true},
+  ];
+  const renderService = () => (
+    <div>
+      <h3 style={{...FM,margin:"0 0 4px",fontSize:19,fontWeight:800,color:"#111827"}}>How can we help?</h3>
+      <p style={{...F,margin:"0 0 18px",fontSize:13,color:"#6b7280"}}>Select the type of service the customer needs</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:22}}>
+        {SVCS.map(s => { const sel = form.svc === s.id; return (
+          <div key={s.id} className={`opt-card${sel?" sel":""}`} style={optCard(sel)} onClick={() => upd("svc",s.id)}>
+            <div style={{width:40,height:40,borderRadius:9,background:sel?"#e82424":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:9,transition:"background .12s"}}>
+              <i className={`ti ${s.icon}`} style={{fontSize:20,color:sel?"#fff":"#6b7280"}}/>
+            </div>
+            <p style={{...FM,margin:"0 0 3px",fontWeight:700,fontSize:13,color:"#111827"}}>{s.label}</p>
+            <p style={{...F,margin:0,fontSize:12,color:"#6b7280",lineHeight:1.4}}>{s.desc}</p>
+            {s.ref && <span className="tag" style={{background:"#fffbeb",color:"#92400e",marginTop:8}}><i className="ti ti-arrow-forward" style={{fontSize:10}}/>Will refer on</span>}
+          </div>
+        );})}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        {BackBtn}
+        <button style={{...btnRed,opacity:form.svc?1:.4}} className="btn-red" onClick={() => form.svc && next()} disabled={!form.svc}>
+          Continue <i className="ti ti-arrow-right"/>
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Referral screen ────────────────────────────────────────────────
+  const renderReferral = () => (
+    <div style={{textAlign:"center",padding:"1.25rem 0"}}>
+      <div style={{width:66,height:66,borderRadius:"50%",background:"#fffbeb",border:"2px solid #fde68a",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+        <i className="ti ti-arrow-forward" style={{fontSize:28,color:"#92400e"}}/>
+      </div>
+      <h3 style={{...FM,margin:"0 0 8px",fontSize:19,fontWeight:800,color:"#111827"}}>Outside our services</h3>
+      <p style={{...F,fontSize:13,color:"#6b7280",margin:"0 0 18px",maxWidth:360,marginLeft:"auto",marginRight:"auto",lineHeight:1.6}}>
+        {form.svc==="new" ? "We don't supply or install new gates." : "This enquiry falls outside our current services."} Please refer this customer to a suitable provider.
+      </p>
+      <div style={{...card,maxWidth:340,margin:"0 auto 18px",textAlign:"left",background:"#f9fafb"}}>
+        <p style={{...UL,margin:"0 0 8px"}}>Enquiry log</p>
+        {[["Suburb",`${form.suburb?.n} (${form.suburb?.p})`],["Request",form.svc==="new"?"New gate installation":"Other / unspecified"]].map(([k,v]) => (
+          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #e5e7eb",fontSize:13}}>
+            <span style={{...FM,color:"#9ca3af",fontWeight:600,fontSize:12}}>{k}</span>
+            <span style={{...FM,fontWeight:700,color:"#374151"}}>{v}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+        {BackBtn}
+        <button style={btnRed} className="btn-red" onClick={reset}><i className="ti ti-plus"/>New enquiry</button>
+      </div>
+    </div>
+  );
+
+  // ── Step 3: Problem & photos ───────────────────────────────────────
+  const renderProblem = () => (
+    <div>
+      <h3 style={{...FM,margin:"0 0 4px",fontSize:19,fontWeight:800,color:"#111827"}}>{form.svc==="repair"?"Describe the fault":"Automation details"}</h3>
+      <p style={{...F,margin:"0 0 18px",fontSize:13,color:"#6b7280"}}>{form.svc==="repair"?"Tell us what's wrong and attach photos":"Describe what needs to be automated"}</p>
+      <label style={UL}>{form.svc==="repair"?"Fault description":"Details"}</label>
+      <textarea rows={4}
+        placeholder={form.svc==="repair"?"Describe the symptoms, error codes, how long it's been happening…":"Describe the gate, existing setup, and what you'd like automated…"}
+        value={form.problem} onChange={e => upd("problem",e.target.value)}
+        style={{...F,fontSize:14,marginBottom:16}}/>
+      <label style={UL}>Photos</label>
+      <p style={{...F,fontSize:12,color:"#6b7280",margin:"0 0 8px",lineHeight:1.5}}>
+        Request photos of: <strong>the gate</strong>, <strong>motor / controller</strong>, and <strong>remote control</strong>
+      </p>
+      <PhotoUpload photos={form.photos} onChange={v => upd("photos",v)} label="Upload gate · motor · remote photos"/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:22}}>
+        {BackBtn}
+        <button style={btnRed} className="btn-red" onClick={next}>Continue <i className="ti ti-arrow-right"/></button>
+      </div>
+    </div>
+  );
+
+  // ── Step 4: Physical damage ────────────────────────────────────────
+  const renderDamage = () => (
+    <div>
+      <h3 style={{...FM,margin:"0 0 4px",fontSize:19,fontWeight:800,color:"#111827"}}>Any physical damage?</h3>
+      <p style={{...F,margin:"0 0 18px",fontSize:13,color:"#6b7280"}}>Check for dents, bent panels, broken hinges, or structural issues</p>
+      <div style={{display:"flex",gap:10,marginBottom:14}}>
+        {[{v:"yes",label:"Yes — damage present",sub:"Refer to Moshe",icon:"ti-alert-triangle",tc:"#92400e",bg:"#fffbeb",bdr:"#fde68a"},
+          {v:"no", label:"No visible damage",   sub:"All clear",     icon:"ti-circle-check", tc:"#15803d",bg:"#f0fdf4",bdr:"#86efac"}].map(o => {
+          const sel = form.damaged===o.v;
+          return (
+            <div key={o.v} onClick={() => upd("damaged",o.v)} style={{flex:1,cursor:"pointer",padding:"14px",borderRadius:10,textAlign:"center",border:`1.5px solid ${sel?o.bdr:"#e5e7eb"}`,background:sel?o.bg:"#fff",transition:"all .12s"}}>
+              <i className={`ti ${o.icon}`} style={{fontSize:24,display:"block",marginBottom:7,color:o.tc}}/>
+              <p style={{...FM,margin:"0 0 2px",fontWeight:700,fontSize:13,color:"#111827"}}>{o.label}</p>
+              <p style={{...F,margin:0,fontSize:11,color:"#9ca3af"}}>{o.sub}</p>
+            </div>
+          );
+        })}
+      </div>
+      {form.damaged==="yes" && (
+        <div style={{marginBottom:14}}>
+          <div style={{padding:"13px 15px",borderRadius:9,marginBottom:12,background:"#eff6ff",border:"1.5px solid #bfdbfe",display:"flex",gap:11,alignItems:"flex-start"}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:"#dbeafe",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <i className="ti ti-user" style={{fontSize:15,color:"#1d4ed8"}}/>
+            </div>
+            <div>
+              <p style={{...FM,margin:"0 0 2px",fontWeight:700,fontSize:13,color:"#1d4ed8"}}>Refer damage photos to Moshe</p>
+              <p style={{...F,margin:0,fontSize:12,color:"#3b82f6",lineHeight:1.5}}>Moshe must assess the damage before a technician can be dispatched.</p>
+            </div>
+          </div>
+          <label style={UL}>Damage photos</label>
+          <p style={{...F,fontSize:12,color:"#6b7280",margin:"0 0 8px"}}>Request a close-up photo of the damaged area</p>
+          <PhotoUpload photos={form.damagePhotos} onChange={v => upd("damagePhotos",v)} label="Upload damage close-up photos"/>
+        </div>
+      )}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:18}}>
+        {BackBtn}
+        <button style={{...btnRed,opacity:form.damaged?1:.4}} className="btn-red" onClick={() => form.damaged && next()} disabled={!form.damaged}>
+          Continue <i className="ti ti-arrow-right"/>
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Step 5: Gate type ──────────────────────────────────────────────
+  const GATES = [
+    {id:"sliding",label:"Sliding gate",  icon:"ti-arrows-left-right",desc:"Rolls horizontally on a track"},
+    {id:"swing",  label:"Swing gate",    icon:"ti-door",             desc:"Hinged, opens inward or outward"},
+    {id:"boom",   label:"Boom gate",     icon:"ti-minus",            desc:"Barrier arm for vehicle access"},
+    {id:"hanging",label:"Hanging gate",  icon:"ti-arrow-up",         desc:"Cantilever or suspended"},
+    {id:"other",  label:"Other / unsure",icon:"ti-help-circle",      desc:"Different or unknown type"},
+  ];
+  const renderGateType = () => (
+    <div>
+      <h3 style={{...FM,margin:"0 0 4px",fontSize:19,fontWeight:800,color:"#111827"}}>What type of gate?</h3>
+      <p style={{...F,margin:"0 0 18px",fontSize:13,color:"#6b7280"}}>Select the gate configuration</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        {GATES.map(g => { const sel=form.gateType===g.id, u=g.id==="hanging"||g.id==="other"; return (
+          <div key={g.id} className={`opt-card${sel?" sel":""}`} style={optCard(sel)} onClick={() => upd("gateType",g.id)}>
+            <div style={{width:38,height:38,borderRadius:9,background:sel?"#e82424":"#f3f4f6",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:8,transition:"background .12s"}}>
+              <i className={`ti ${g.icon}`} style={{fontSize:18,color:sel?"#fff":"#6b7280"}}/>
+            </div>
+            <p style={{...FM,margin:"0 0 2px",fontWeight:700,fontSize:13,color:"#111827"}}>{g.label}</p>
+            <p style={{...F,margin:0,fontSize:11,color:"#6b7280"}}>{g.desc}</p>
+            {u && <span className="tag" style={{background:"#fffbeb",color:"#92400e",marginTop:7}}><i className="ti ti-alert-triangle" style={{fontSize:10}}/>Needs assessment</span>}
+          </div>
+        );})}
+      </div>
+      {(form.gateType==="hanging"||form.gateType==="other") && (
+        <div style={{padding:"10px 14px",borderRadius:8,marginBottom:10,background:"#fffbeb",border:"1.5px solid #fde68a",display:"flex",gap:8}}>
+          <i className="ti ti-alert-triangle" style={{fontSize:15,color:"#92400e",flexShrink:0,marginTop:1}}/>
+          <p style={{...F,margin:0,fontSize:12,color:"#92400e",fontWeight:600}}>No technician currently handles this gate type — manual assessment required.</p>
+        </div>
+      )}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:18}}>
+        {BackBtn}
+        <button style={{...btnRed,opacity:form.gateType?1:.4}} className="btn-red" onClick={() => form.gateType && next()} disabled={!form.gateType}>
+          View results <i className="ti ti-arrow-right"/>
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Step 6: Results ────────────────────────────────────────────────
+  const ST = {
+    yes:  {label:"Eligible",       bg:"#f0fdf4",tc:"#15803d",bdr:"#86efac",icon:"ti-circle-check"},
+    maybe:{label:"Check required", bg:"#fffbeb", tc:"#92400e",bdr:"#fde68a",icon:"ti-alert-circle"},
+    no:   {label:"Not eligible",   bg:"#fef2f2", tc:"#dc2626",bdr:"#fca5a5",icon:"ti-circle-x"},
+  };
+  const renderResults = () => {
+    const any       = results.some(r => r.status !== "no");
+    const isLoading = driveData === 'loading';
+    return (
+      <div>
+        {form.damaged==="yes" && (
+          <div style={{padding:"13px 15px",borderRadius:9,marginBottom:14,background:"#eff6ff",border:"1.5px solid #bfdbfe",display:"flex",gap:10,alignItems:"flex-start"}}>
+            <i className="ti ti-alert-circle" style={{fontSize:19,color:"#1d4ed8",flexShrink:0,marginTop:1}}/>
+            <p style={{...FM,margin:0,fontSize:13,fontWeight:700,color:"#1d4ed8"}}>Physical damage reported — Moshe must review before assigning a technician</p>
+          </div>
+        )}
+
+        {/* Summary */}
+        <div style={{background:"#1e4d49",borderRadius:10,padding:"16px 18px",marginBottom:18}}>
+          <p style={{...FM,margin:"0 0 12px",fontWeight:700,fontSize:10,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:".08em"}}>Enquiry summary</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 20px"}}>
+            {[["Suburb",`${form.suburb?.n} (${form.suburb?.p})`],
+              ["Service", form.svc==="repair"?"Repair automated gate":"Automate existing gate"],
+              ["Gate type", form.gateType ? form.gateType.charAt(0).toUpperCase()+form.gateType.slice(1) : "—"],
+              ["Physical damage", form.damaged==="yes"?"Yes — refer to Moshe":"None reported"],
+            ].map(([k,v]) => (
+              <div key={k}>
+                <span style={{...FM,fontSize:9,color:"rgba(255,255,255,.35)",display:"block",marginBottom:2,textTransform:"uppercase",letterSpacing:".06em",fontWeight:700}}>{k}</span>
+                <span style={{...FM,fontWeight:700,fontSize:13,color:"#fff"}}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Technician heading */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}>
+            <i className="ti ti-users" style={{fontSize:15,color:"#e82424"}}/>
+            <p style={{...FM,margin:0,fontSize:14,fontWeight:800,color:"#111827"}}>Technician matching</p>
+          </div>
+          {isLoading && (
+            <span style={{...FM,fontSize:11,color:"#6b7280",display:"flex",alignItems:"center",gap:5}}>
+              <i className="ti ti-refresh spin" style={{fontSize:13,color:"#1d4ed8"}}/>Fetching live drive times…
+            </span>
+          )}
+          {!isLoading && driveData && driveData!=='error' && (
+            <span style={{...FM,fontSize:11,color:"#15803d",display:"flex",alignItems:"center",gap:4}}>
+              <i className="ti ti-map-2" style={{fontSize:12}}/>Live Google Maps · no tolls
+            </span>
+          )}
+          {driveData==='error' && (
+            <span style={{...FM,fontSize:11,color:"#9ca3af",display:"flex",alignItems:"center",gap:4}}>
+              <i className="ti ti-calculator" style={{fontSize:12}}/>Using estimates
+            </span>
+          )}
+        </div>
+
+        {!any && !isLoading && (
+          <div style={{padding:"13px 15px",borderRadius:9,background:"#fef2f2",border:"1.5px solid #fca5a5",marginBottom:12,display:"flex",gap:9}}>
+            <i className="ti ti-alert-triangle" style={{fontSize:17,color:"#dc2626",flexShrink:0}}/>
+            <p style={{...F,margin:0,fontSize:13,color:"#dc2626",fontWeight:600}}>No eligible technician found for this job. Manual review required.</p>
+          </div>
+        )}
+
+        <div style={{display:"grid",gap:9,marginBottom:24}}>
+          {results.map(r => {
+            const si = ST[r.status];
+            return (
+              <div key={r.id} style={{...card,opacity:r.status==="no"?.6:1,borderColor:r.status!=="no"?si.bdr:"#e5e7eb"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:42,height:42,borderRadius:"50%",background:r.color,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff",flexShrink:0,...FM}}>{r.id}</div>
+                    <div>
+                      <p style={{...FM,margin:0,fontWeight:700,fontSize:14,color:"#111827"}}>Technician {r.id}</p>
+                      <p style={{...F,margin:0,fontSize:11,color:"#9ca3af"}}>Based in {r.home} · max {r.maxMin} min travel</p>
+                    </div>
+                  </div>
+                  {isLoading
+                    ? <span style={{...FM,fontSize:12,color:"#6b7280",display:"flex",alignItems:"center",gap:5}}><i className="ti ti-refresh spin" style={{fontSize:12}}/></span>
+                    : <span className="tag" style={{background:si.bg,color:si.tc}}><i className={`ti ${si.icon}`} style={{fontSize:11}}/>{si.label}</span>
+                  }
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"5px 16px",fontSize:12,color:"#6b7280",paddingTop:9,borderTop:"1px solid #f3f4f6",alignItems:"center"}}>
+                  <span style={{...F,display:"flex",alignItems:"center",gap:4}}>
+                    <i className="ti ti-clock" style={{color:"#e82424",fontSize:12}}/>
+                    {isLoading ? <span className="pulse" style={{background:"#e5e7eb",borderRadius:4,width:44,height:11,display:"inline-block"}}/> : `${r.mins} min from home`}
+                  </span>
+                  <span style={{...F,display:"flex",alignItems:"center",gap:4}}>
+                    <i className="ti ti-map" style={{color:"#e82424",fontSize:12}}/>
+                    {isLoading ? <span className="pulse" style={{background:"#e5e7eb",borderRadius:4,width:30,height:11,display:"inline-block"}}/> : `${r.km} km`}
+                  </span>
+                  <span style={{...F,display:"flex",alignItems:"center",gap:4,color:r.canGate?"#16a34a":"#dc2626"}}>
+                    <i className={`ti ${r.canGate?"ti-check":"ti-x"}`} style={{fontSize:12}}/>{form.gateType} gate: {r.canGate?"yes":"no"}
+                  </span>
+                  {!isLoading && <DriveTimeBadge source={r.source} withTraffic={r.withTraffic}/>}
+                  {r.flex && r.status!=="no" && !isLoading && <span style={{...F,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-info-circle" style={{fontSize:12}}/>May be closer if already near job</span>}
+                </div>
+                {!isLoading && r.reasons.map((reason,i) => (
+                  <p key={i} style={{...F,margin:"7px 0 0",fontSize:11,color:r.status==="no"?"#dc2626":"#92400e",display:"flex",alignItems:"center",gap:4}}>
+                    <i className="ti ti-alert-circle" style={{fontSize:11,flexShrink:0}}/>{reason}
+                  </p>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          {BackBtn}
+          <button style={btnRed} className="btn-red" onClick={reset}><i className="ti ti-plus"/>New enquiry</button>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Header logo ────────────────────────────────────────────────────
+  const GateLogo = () => (
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="36" height="36" rx="6" fill="#1e4d49"/>
+        <path d="M7 27V15C7 11.134 10.134 8 14 8H22C25.866 8 29 11.134 29 15V27" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M14 27V20C14 18.895 14.895 18 16 18H20C21.105 18 22 18.895 22 20V27" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="18" cy="13" r="2" fill="white"/>
+        <path d="M4 27H32" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+      </svg>
+      <div>
+        <span style={{...FM,fontSize:16,fontWeight:800,color:"#111827",letterSpacing:"-0.01em"}}>Gate <span style={{fontWeight:500}}>Gurus</span></span>
+        <div style={{...F,fontSize:10,color:"#6b7280",fontWeight:500,marginTop:-1}}>Admin · Dispatch Tool</div>
+      </div>
+    </div>
+  );
+
+  // ── Main render ────────────────────────────────────────────────────
+  return (
+    <div style={{width:"100%"}}>
+      {/* Header */}
+      <div style={{background:"#fff",borderRadius:"12px 12px 0 0",padding:"14px 20px",borderBottom:"3px solid #e82424",border:"1.5px solid #e5e7eb",borderBottomColor:"#e82424",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <GateLogo/>
+        <div style={{textAlign:"right"}}>
+          <div style={{background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,display:"inline-flex",alignItems:"center",gap:4,...FM}}>
+            <i className="ti ti-phone" style={{fontSize:11}}/>(03) 9052 4903
+          </div>
+          <div style={{...FM,fontSize:10,color:"#9ca3af",marginTop:3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Admin portal</div>
+        </div>
+      </div>
+
+      {/* Form body */}
+      <div style={{background:"#fff",padding:"24px 20px",border:"1.5px solid #e5e7eb",borderTop:"none",borderRadius:"0 0 12px 12px"}}>
+        {step<=5 && !isReferral && <Progress/>}
+        {step===1 && renderSuburb()}
+        {step===2 && renderService()}
+        {isReferral && renderReferral()}
+        {step===3 && !isReferral && renderProblem()}
+        {step===4 && !isReferral && renderDamage()}
+        {step===5 && !isReferral && renderGateType()}
+        {step===6 && !isReferral && renderResults()}
+      </div>
+
+      {/* Footer */}
+      <div style={{textAlign:"center",marginTop:12,fontSize:11,...F,color:"#9ca3af"}}>
+        <a href="https://gategurus.com.au" style={{color:"#9ca3af",textDecoration:"none"}} target="_blank" rel="noopener noreferrer">gategurus.com.au</a>
+        {" · "}Internal dispatch tool
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
